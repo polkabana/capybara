@@ -7,7 +7,9 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
+	"time"
 
 	"./homebrew"
 	"github.com/op/go-logging"
@@ -15,12 +17,57 @@ import (
 	"gopkg.in/gcfg.v1"
 )
 
+type DmrId struct {
+	ID       uint32
+	Callsign string
+	Alias    string
+}
+
 var (
-	hb *homebrew.Homebrew
-	//config *homebrew.RepeaterConfiguration
-	//addr   *net.UDPAddr
-	log = logging.MustGetLogger("capybara")
+	hb     *homebrew.Homebrew
+	DmrIds []*DmrId
+	log    = logging.MustGetLogger("capybara")
 )
+
+func reloadDmrIdInfo() {
+	for {
+		loadDmrIdInfo()
+		time.Sleep(time.Hour)
+	}
+}
+
+func loadDmrIdInfo() {
+	var newDmrIds []*DmrId
+	content, err := ioutil.ReadFile(homebrew.Config.General.DMRIDs)
+	if err == nil {
+		ids := strings.Split(string(content), "\n")
+		for _, line := range ids {
+			record := strings.Split(line, "\t")
+
+			id, err := strconv.Atoi(strings.TrimSpace(record[0]))
+			if err == nil {
+				dmrid := &DmrId{
+					ID:       uint32(id),
+					Callsign: record[1],
+					Alias:    record[2],
+				}
+
+				newDmrIds = append(newDmrIds, dmrid)
+			}
+		}
+
+		DmrIds = newDmrIds
+	}
+}
+
+func getDmrIdInfo(id uint32) (string, string) {
+	for _, dmrid := range DmrIds {
+		if dmrid.ID == id {
+			return dmrid.Callsign, dmrid.Alias
+		}
+	}
+	return "", ""
+}
 
 func httpIndex(w http.ResponseWriter, r *http.Request) {
 	content, err := ioutil.ReadFile("index.html")
@@ -61,20 +108,26 @@ func httpLastHeard(w http.ResponseWriter, r *http.Request) {
 
 	var calls []string
 	for _, call := range hb.GetCalls() {
+
+		callsign, alias := getDmrIdInfo(call.SrcID)
 		data := struct {
-			Src      uint32
-			Dst      uint32
-			TS       uint8
-			Type     string
-			Time     uint64
-			Duration uint32
+			Src         uint32
+			SrcCallsign string
+			SrcAlias    string
+			Dst         uint32
+			TS          uint8
+			Type        string
+			Time        uint64
+			Duration    uint32
 		}{
-			Src:      call.SrcID,
-			Dst:      call.DstID,
-			TS:       call.Timeslot,
-			Type:     dmr.CallTypeShortName[call.CallType],
-			Time:     call.Time / 1000,
-			Duration: call.Duration,
+			Src:         call.SrcID,
+			SrcCallsign: callsign,
+			SrcAlias:    alias,
+			Dst:         call.DstID,
+			TS:          call.Timeslot,
+			Type:        dmr.CallTypeShortName[call.CallType],
+			Time:        call.Time / 1000,
+			Duration:    call.Duration,
 		}
 
 		b, err := json.Marshal(data)
@@ -157,6 +210,12 @@ func main() {
 
 	if homebrew.Config.General.EnableHTTP {
 		go httpServer()
+	}
+
+	if _, err := os.Stat(homebrew.Config.General.DMRIDs); err == nil {
+		go reloadDmrIdInfo()
+	} else {
+		log.Errorf("File %s does not exis\n", homebrew.Config.General.DMRIDs)
 	}
 
 	for {
