@@ -1,0 +1,95 @@
+<html>
+<head>
+    <title>Capybara monitor</title>
+    <script type="text/javascript" src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+    <style>
+    body {
+        font-family: sans-serif;
+    }
+    table {
+        background-color: black;
+    }
+    td, th {
+        margin: 0;
+        padding: 3px 10px;
+        border: none;
+    }
+    th {
+        background-color: rgb(216, 216, 216);
+    }
+    td {
+        background-color: white;
+    }
+    </style>
+</head>
+<body>
+    <h1>Welcome to Capybara monitor</h1>
+
+    <h2>Active peers</h2>
+    <table id="peers"></table>
+
+    <h2>Last heard</h2>
+    <table id="lh"></table>
+
+    <p><br/><br/><br/>---<br/>
+    2020 &copy; <a href="https://github.com/polkabana/capybara">Capybara monitor</a></p>
+
+    <script type="text/javascript">
+$.ajax({
+    url:"peers.json",
+    method:'GET',
+    cache:false,
+    type:"text/json",
+    success: function(json) {
+        html = "<tr>"
+        html += "<th>Peer</th>"
+        html += "<th>Callsign</th>"
+        html += "<th>Location</th>"
+        html += "</tr>"
+
+        for(var i=0; i<json.length; i++) {
+            console.log(json[i])
+            html += "<tr>"
+            html += "<td>" + json[i].ID + "</td>"
+            html += "<td>" + json[i].Callsign + "</td>"
+            html += "<td>" + json[i].Location + "</td>"
+            html += "</tr>"
+        }
+        $("#peers").html(html);
+    }
+});
+
+$.ajax({
+    url:"lh.json",
+    method:'GET',
+    cache:false,
+    type:"text/json",
+    success: function(json) {
+        html = "<tr>"
+        html += "<th>Time</th>"
+        html += "<th>Src</th>"
+        html += "<th>Dst</th>"
+        html += "<th>Duration</th>"
+        html += "</tr>"
+
+        for(var i=0; i<json.length; i++) {
+            data = json[json.length-i-1]
+            console.log(data)
+            html += "<tr>"
+            html += "<td>" + timeConverter(data.Time) + "</td>"
+            html += "<td>" + data.Src + "</td>"
+            html += "<td>" + data.Type + data.Dst + "</td>"
+            html += "<td>" + data.Duration /  1000 + " sec. </td>"
+            html += "</tr>"
+        }
+        $("#lh").html(html);
+    }
+});
+
+function timeConverter(UNIX_timestamp) {
+    var d = new Date(UNIX_timestamp * 1000);
+    return d.toLocaleDateString("ru-RU").replace(".", "-").replace(".", "-") + " " + d.toLocaleTimeString("ru-RU")   
+}
+    </script>
+</body>
+</html>
