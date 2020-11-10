@@ -36,7 +36,7 @@ Wants=network-online.target
 StandardOutput=null
 WorkingDirectory=/opt/capybara
 RestartSec=3
-ExecStart=/opt/capybara/capybara > /dev/null 2> /deb/null
+ExecStart=/opt/capybara/capybara > /dev/null 2> /dev/null
 Restart=on-abort
 
 [Install]
