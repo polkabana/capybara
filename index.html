@@ -66,7 +66,7 @@ $.ajax({
     type:"text/json",
     success: function(json) {
         html = "<tr>"
-        html += "<th>Time</th>"
+        html += "<th>Time, UTC</th>"
         html += "<th>Src</th>"
         html += "<th>Name</th>"
         html += "<th>Dst</th>"
@@ -77,7 +77,7 @@ $.ajax({
             data = json[json.length-i-1]
             console.log(data)
             html += "<tr>"
-            html += "<td>" + timeConverter(data.Time) + "</td>"
+            html += "<td>" + data.Time + "</td>"
             html += "<td>" + data.Src + "</td>"
             html += "<td>" + data.SrcCallsign + ", " + data.SrcAlias + "</td>"
             html += "<td>" + data.Type + data.Dst + "</td>"
@@ -87,11 +87,6 @@ $.ajax({
         $("#lh").html(html);
     }
 });
-
-function timeConverter(UNIX_timestamp) {
-    var d = new Date(UNIX_timestamp * 1000);
-    return d.toLocaleDateString("ru-RU").replace(".", "-").replace(".", "-") + " " + d.toLocaleTimeString("ru-RU")   
-}
     </script>
 </body>
 </html>

@@ -110,6 +110,10 @@ func httpLastHeard(w http.ResponseWriter, r *http.Request) {
 	for _, call := range hb.GetCalls() {
 
 		callsign, alias := getDmrIdInfo(call.SrcID)
+
+		t := time.Unix(int64(call.Time/1000), 0)
+		timeString := t.Format("15:04:05 02-Jan-2006")
+
 		data := struct {
 			Src         uint32
 			SrcCallsign string
@@ -117,7 +121,7 @@ func httpLastHeard(w http.ResponseWriter, r *http.Request) {
 			Dst         uint32
 			TS          uint8
 			Type        string
-			Time        uint64
+			Time        string
 			Duration    uint32
 		}{
 			Src:         call.SrcID,
@@ -126,7 +130,7 @@ func httpLastHeard(w http.ResponseWriter, r *http.Request) {
 			Dst:         call.DstID,
 			TS:          call.Timeslot,
 			Type:        dmr.CallTypeShortName[call.CallType],
-			Time:        call.Time / 1000,
+			Time:        timeString,
 			Duration:    call.Duration,
 		}
 
