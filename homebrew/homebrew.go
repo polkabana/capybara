@@ -604,8 +604,10 @@ func (h *Homebrew) handle(remote *net.UDPAddr, data []byte) error {
 			case bytes.Equal(data[:4], RepeaterConfig):
 				log.Debugf("peer %d@%s sent config\n", peer.ID, remote)
 				peer.Last.PingReceived = time.Now()
-				peer.Config, _ = parseConfigData(data)
-				//printConfig(peer.Config)
+				if peer.Config != nil { // sometime peer send config again
+					peer.Config, _ = parseConfigData(data)
+					//printConfig(peer.Config)
+				}
 				return h.WriteToPeer(append(RepeaterACK, peer.id...), peer)
 
 			case bytes.Equal(data[:4], RepeaterOptions):
@@ -1012,6 +1014,12 @@ func parseConfigData(data []byte) (*RepeaterConfiguration, error) {
 func buildConfigData(c *RepeaterConfiguration) []byte {
 	var data = make([]byte, 302) // copy config data
 
+	copy(data[:4], RepeaterConfig)
+
+	if c == nil {
+		return data
+	}
+
 	if c.ColorCode < 1 {
 		c.ColorCode = 1
 	}
@@ -1043,7 +1051,6 @@ func buildConfigData(c *RepeaterConfiguration) []byte {
 		lon = lon[:9]
 	}
 
-	copy(data[:4], RepeaterConfig)
 	data[4] = uint8(c.ID >> 24)
 	data[5] = uint8(c.ID >> 16)
 	data[6] = uint8(c.ID >> 8)
