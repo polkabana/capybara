@@ -33,6 +33,7 @@ var (
 
 func reloadDmrIdInfo() {
 	for {
+		log.Debug("reload DMR IDs")
 		loadDmrIdInfo()
 		time.Sleep(time.Hour)
 	}
@@ -59,6 +60,7 @@ func loadDmrIdInfo() {
 		}
 
 		DmrIds = newDmrIds
+		log.Debug("DMR IDs loaded")
 	}
 }
 
@@ -165,7 +167,9 @@ func httpServer() {
 	http.HandleFunc("/lh.json", httpLastHeard)
 
 	for {
-		http.ListenAndServe(fmt.Sprintf("%s:%d", homebrew.Config.General.IP, homebrew.Config.General.HTTPPort), nil)
+		if err := http.ListenAndServe(fmt.Sprintf("%s:%d", homebrew.Config.General.IP, homebrew.Config.General.HTTPPort), nil); err != nil {
+			log.Errorf("HTTP failed: %s\n", err.Error())
+		}
 	}
 }
 
