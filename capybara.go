@@ -9,6 +9,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"./homebrew"
@@ -24,9 +25,10 @@ type DmrId struct {
 }
 
 var (
-	hb     *homebrew.Homebrew
-	DmrIds []*DmrId
-	log    = logging.MustGetLogger("capybara")
+	hb      *homebrew.Homebrew
+	DmrIds  []*DmrId
+	mutHttp = &sync.Mutex{}
+	log     = logging.MustGetLogger("capybara")
 )
 
 func reloadDmrIdInfo() {
@@ -70,6 +72,9 @@ func getDmrIdInfo(id uint32) (string, string) {
 }
 
 func httpIndex(w http.ResponseWriter, r *http.Request) {
+	mutHttp.Lock()
+	defer mutHttp.Unlock()
+
 	content, err := ioutil.ReadFile("index.html")
 	if err == nil {
 		fmt.Fprintf(w, string(content))
@@ -78,6 +83,9 @@ func httpIndex(w http.ResponseWriter, r *http.Request) {
 }
 
 func httpPeers(w http.ResponseWriter, r *http.Request) {
+	mutHttp.Lock()
+	defer mutHttp.Unlock()
+
 	w.Header().Set("Content-Type", "application/json")
 
 	var peers []string
@@ -89,8 +97,13 @@ func httpPeers(w http.ResponseWriter, r *http.Request) {
 				Location string
 			}{
 				ID:       peer.ID,
-				Callsign: peer.Config.Callsign,
-				Location: peer.Config.Location,
+				Callsign: "",
+				Location: "",
+			}
+
+			if peer.Config != nil {
+				data.Callsign = peer.Config.Callsign
+				data.Location = peer.Config.Location
 			}
 
 			b, err := json.Marshal(data)
@@ -104,6 +117,9 @@ func httpPeers(w http.ResponseWriter, r *http.Request) {
 }
 
 func httpLastHeard(w http.ResponseWriter, r *http.Request) {
+	mutHttp.Lock()
+	defer mutHttp.Unlock()
+
 	w.Header().Set("Content-Type", "application/json")
 
 	var calls []string
