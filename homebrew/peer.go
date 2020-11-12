@@ -30,6 +30,7 @@ type Peer struct {
 		PacketReceived time.Time
 		PingSent       time.Time
 		PingReceived   time.Time
+		PongSent       time.Time
 		PongReceived   time.Time
 	}
 

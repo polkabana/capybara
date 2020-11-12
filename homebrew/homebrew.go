@@ -70,6 +70,7 @@ var (
 var (
 	AuthTimeout  = time.Second * 15
 	PingInterval = time.Second * 5
+	PongInterval = time.Second * 5
 	PingTimeout  = time.Second * 30
 	SendInterval = time.Millisecond * 30
 	TGTimeout    = time.Minute * 15
@@ -785,6 +786,14 @@ func (h *Homebrew) keepalive(stop <-chan bool) {
 							log.Errorf("peer %d@%s not requesting to ping; dropping connection", peer.ID, peer.Addr)
 							h.WriteToPeer(append(MasterClosing, h.id...), peer)
 							h.Unlink(peer.ID)
+							break
+
+						case now.Sub(peer.Last.PongSent) > PongInterval:
+							peer.Last.PongSent = now
+							//log.Errorf("peer %d@%s sent ping\n", peer.ID, peer.Addr)
+							if err := h.WriteToPeer(append(MasterPong, peer.id...), peer); err != nil {
+								log.Errorf("peer %d@%s ping failed: %v\n", peer.ID, peer.Addr, err)
+							}
 							break
 						}
 						break
