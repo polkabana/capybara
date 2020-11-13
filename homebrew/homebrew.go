@@ -366,6 +366,11 @@ func (h *Homebrew) GetCalls() []*CallRecord {
 }
 
 func (h *Homebrew) AddCall(call *CallRecord) {
+	size := len(h.LastHeard)
+	if size >= 15 {
+		h.LastHeard = h.LastHeard[size-15+1:]
+	}
+
 	h.LastHeard = append(h.LastHeard, call)
 }
 
