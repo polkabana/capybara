@@ -609,7 +609,7 @@ func (h *Homebrew) handle(remote *net.UDPAddr, data []byte) error {
 			case bytes.Equal(data[:4], RepeaterConfig):
 				log.Debugf("peer %d@%s sent config\n", peer.ID, remote)
 				peer.Last.PingReceived = time.Now()
-				if peer.Config != nil { // sometime peer send config again
+				if peer.Config == nil { // sometime peer send config again
 					peer.Config, _ = parseConfigData(data)
 					//printConfig(peer.Config)
 				}
