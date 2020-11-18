@@ -27,19 +27,19 @@ type DmrId struct {
 var (
 	hb      *homebrew.Homebrew
 	DmrIds  []*DmrId
-	mutHttp = &sync.Mutex{}
+	mutHTTP = &sync.Mutex{}
 	log     = logging.MustGetLogger("capybara")
 )
 
-func reloadDmrIdInfo() {
+func reloadDmrIDInfo() {
 	for {
 		log.Debug("reload DMR IDs")
-		loadDmrIdInfo()
+		loadDmrIDInfo()
 		time.Sleep(time.Hour)
 	}
 }
 
-func loadDmrIdInfo() {
+func loadDmrIDInfo() {
 	var newDmrIds []*DmrId
 	content, err := ioutil.ReadFile(homebrew.Config.General.DMRIDs)
 	if err == nil {
@@ -64,7 +64,7 @@ func loadDmrIdInfo() {
 	}
 }
 
-func getDmrIdInfo(id uint32) (string, string) {
+func getDmrIDInfo(id uint32) (string, string) {
 	for _, dmrid := range DmrIds {
 		if dmrid.ID == id {
 			return dmrid.Callsign, dmrid.Alias
@@ -74,8 +74,8 @@ func getDmrIdInfo(id uint32) (string, string) {
 }
 
 func httpIndex(w http.ResponseWriter, r *http.Request) {
-	mutHttp.Lock()
-	defer mutHttp.Unlock()
+	mutHTTP.Lock()
+	defer mutHTTP.Unlock()
 
 	content, err := ioutil.ReadFile("index.html")
 	if err == nil {
@@ -85,8 +85,8 @@ func httpIndex(w http.ResponseWriter, r *http.Request) {
 }
 
 func httpPeers(w http.ResponseWriter, r *http.Request) {
-	mutHttp.Lock()
-	defer mutHttp.Unlock()
+	mutHTTP.Lock()
+	defer mutHTTP.Unlock()
 
 	w.Header().Set("Content-Type", "application/json")
 
@@ -119,15 +119,15 @@ func httpPeers(w http.ResponseWriter, r *http.Request) {
 }
 
 func httpLastHeard(w http.ResponseWriter, r *http.Request) {
-	mutHttp.Lock()
-	defer mutHttp.Unlock()
+	mutHTTP.Lock()
+	defer mutHTTP.Unlock()
 
 	w.Header().Set("Content-Type", "application/json")
 
 	var calls []string
 	for _, call := range hb.GetCalls() {
 
-		callsign, alias := getDmrIdInfo(call.SrcID)
+		callsign, alias := getDmrIDInfo(call.SrcID)
 
 		t := time.Unix(int64(call.Time/1000), 0)
 		timeString := t.Format("15:04:05 02-Jan-2006")
@@ -237,7 +237,7 @@ func main() {
 	}
 
 	if _, err := os.Stat(homebrew.Config.General.DMRIDs); err == nil {
-		go reloadDmrIdInfo()
+		go reloadDmrIDInfo()
 	} else {
 		log.Errorf("File %s does not exis\n", homebrew.Config.General.DMRIDs)
 	}
