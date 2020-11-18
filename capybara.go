@@ -18,7 +18,7 @@ import (
 	"gopkg.in/gcfg.v1"
 )
 
-type DmrId struct {
+type dmrID struct {
 	ID       uint32
 	Callsign string
 	Alias    string
@@ -26,7 +26,7 @@ type DmrId struct {
 
 var (
 	hb      *homebrew.Homebrew
-	DmrIds  []*DmrId
+	dmrIDs  []*dmrID
 	mutHTTP = &sync.Mutex{}
 	log     = logging.MustGetLogger("capybara")
 )
@@ -40,7 +40,7 @@ func reloadDmrIDInfo() {
 }
 
 func loadDmrIDInfo() {
-	var newDmrIds []*DmrId
+	var newDmrIds []*dmrID
 	content, err := ioutil.ReadFile(homebrew.Config.General.DMRIDs)
 	if err == nil {
 		ids := strings.Split(string(content), "\n")
@@ -49,7 +49,7 @@ func loadDmrIDInfo() {
 
 			id, err := strconv.Atoi(strings.TrimSpace(record[0]))
 			if err == nil {
-				dmrid := &DmrId{
+				dmrid := &dmrID{
 					ID:       uint32(id),
 					Callsign: record[1],
 					Alias:    record[2],
@@ -59,13 +59,13 @@ func loadDmrIDInfo() {
 			}
 		}
 
-		DmrIds = newDmrIds
+		dmrIDs = newDmrIds
 		log.Debug("DMR IDs loaded")
 	}
 }
 
 func getDmrIDInfo(id uint32) (string, string) {
-	for _, dmrid := range DmrIds {
+	for _, dmrid := range dmrIDs {
 		if dmrid.ID == id {
 			return dmrid.Callsign, dmrid.Alias
 		}
