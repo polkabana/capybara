@@ -35,58 +35,62 @@
     2020 &copy; <a href="https://github.com/polkabana/capybara">Capybara monitor</a></p>
 
     <script type="text/javascript">
-$.ajax({
-    url:"peers.json",
-    method:'GET',
-    cache:false,
-    type:"text/json",
-    success: function(json) {
-        html = "<tr>"
-        html += "<th>Peer</th>"
-        html += "<th>Callsign</th>"
-        html += "<th>Location</th>"
-        html += "</tr>"
-
-        for(var i=0; i<json.length; i++) {
-            console.log(json[i])
-            html += "<tr>"
-            html += "<td>" + json[i].ID + "</td>"
-            html += "<td>" + json[i].Callsign + "</td>"
-            html += "<td>" + json[i].Location + "</td>"
+function refresh() {
+    $.ajax({
+        url:"peers.json",
+        method:'GET',
+        cache:false,
+        type:"text/json",
+        success: function(json) {
+            html = "<tr>"
+            html += "<th>Peer</th>"
+            html += "<th>Callsign</th>"
+            html += "<th>Location</th>"
             html += "</tr>"
+
+            for(var i=0; i<json.length; i++) {
+                //console.log(json[i])
+                html += "<tr>"
+                html += "<td>" + json[i].ID + "</td>"
+                html += "<td>" + json[i].Callsign + "</td>"
+                html += "<td>" + json[i].Location + "</td>"
+                html += "</tr>"
+            }
+            $("#peers").html(html);
         }
-        $("#peers").html(html);
-    }
-});
+    });
 
-$.ajax({
-    url:"lh.json",
-    method:'GET',
-    cache:false,
-    type:"text/json",
-    success: function(json) {
-        html = "<tr>"
-        html += "<th>Time, UTC</th>"
-        html += "<th>Src</th>"
-        html += "<th>Name</th>"
-        html += "<th>Dst</th>"
-        html += "<th>Duration</th>"
-        html += "</tr>"
-
-        for(var i=0; i<json.length; i++) {
-            data = json[json.length-i-1]
-            console.log(data)
-            html += "<tr>"
-            html += "<td>" + data.Time + "</td>"
-            html += "<td>" + data.Src + "</td>"
-            html += "<td>" + data.SrcCallsign + ", " + data.SrcAlias + "</td>"
-            html += "<td>" + data.Type + data.Dst + "</td>"
-            html += "<td>" + data.Duration /  1000 + " sec. </td>"
+    $.ajax({
+        url:"lh.json",
+        method:'GET',
+        cache:false,
+        type:"text/json",
+        success: function(json) {
+            html = "<tr>"
+            html += "<th>Time, UTC</th>"
+            html += "<th>Src</th>"
+            html += "<th>Name</th>"
+            html += "<th>Dst</th>"
+            html += "<th>Duration</th>"
             html += "</tr>"
+
+            for(var i=0; i<json.length; i++) {
+                data = json[json.length-i-1]
+                //console.log(data)
+                html += "<tr>"
+                html += "<td>" + data.Time + "</td>"
+                html += "<td>" + data.Src + "</td>"
+                html += "<td>" + data.SrcCallsign + ", " + data.SrcAlias + "</td>"
+                html += "<td>" + data.Type + data.Dst + "</td>"
+                html += "<td>" + data.Duration /  1000 + " sec. </td>"
+                html += "</tr>"
+            }
+            $("#lh").html(html);
         }
-        $("#lh").html(html);
-    }
-});
+    });
+}
+refresh();
+setInterval(refresh, 60*1000);
     </script>
 </body>
 </html>
