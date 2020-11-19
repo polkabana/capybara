@@ -70,6 +70,8 @@ EnableHTTP = 1, по-умолчанию 0 - выключен
 HTTPPort = 8080
 # База DMR IDs, например, http://registry.dstar.su/dmr/DMRIds2.php
 DMRIDs = DMRIds2.php
+# Можно указать несколько баз DMR IDs
+DMRIDs = DMRIdsLocal.txt
 
 [Groups]
 # Поддержка приватных вызовов, по-умолчанию 0 - выключена

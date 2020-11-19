@@ -9,7 +9,7 @@ type configGeneral struct {
 	LogLevel   string
 	EnableHTTP bool
 	HTTPPort   int
-	DMRIDs     string
+	DMRIDs     []string
 }
 
 type configGroups struct {
@@ -31,7 +31,7 @@ var Config = TypeConfig{
 		LogLevel:   "ERROR",
 		EnableHTTP: false,
 		HTTPPort:   80,
-		DMRIDs:     "",
+		DMRIDs:     []string{},
 	},
 	Groups: configGroups{
 		EnablePC:    false,

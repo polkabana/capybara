@@ -41,27 +41,37 @@ func reloadDmrIDInfo() {
 
 func loadDmrIDInfo() {
 	var newDmrIds []*dmrID
-	content, err := ioutil.ReadFile(homebrew.Config.General.DMRIDs)
-	if err == nil {
-		ids := strings.Split(string(content), "\n")
-		for _, line := range ids {
-			record := strings.Split(line, "\t")
-
-			id, err := strconv.Atoi(strings.TrimSpace(record[0]))
-			if err == nil {
-				dmrid := &dmrID{
-					ID:       uint32(id),
-					Callsign: record[1],
-					Alias:    record[2],
+	for _, fileName := range homebrew.Config.General.DMRIDs {
+		log.Debugf("load DMR IDs %s\n", fileName)
+		content, err := ioutil.ReadFile(fileName)
+		if err == nil {
+			ids := strings.Split(string(content), "\n")
+			for _, line := range ids {
+				if len(line) > 0 && line[:1] == "#" { // skip commented line
+					continue
 				}
 
-				newDmrIds = append(newDmrIds, dmrid)
+				record := strings.Split(line, "\t")
+
+				id, err := strconv.Atoi(strings.TrimSpace(record[0]))
+				if err == nil {
+					dmrid := &dmrID{ID: uint32(id)}
+
+					if len(record) > 1 {
+						dmrid.Callsign = record[1]
+					}
+					if len(record) > 2 {
+						dmrid.Alias = record[2]
+					}
+
+					newDmrIds = append(newDmrIds, dmrid)
+				}
 			}
 		}
-
-		dmrIDs = newDmrIds
-		log.Debug("DMR IDs loaded")
 	}
+
+	dmrIDs = newDmrIds
+	log.Debug("DMR IDs loaded")
 }
 
 func getDmrIDInfo(id uint32) (string, string) {
@@ -236,11 +246,7 @@ func main() {
 		go httpServer()
 	}
 
-	if _, err := os.Stat(homebrew.Config.General.DMRIDs); err == nil {
-		go reloadDmrIDInfo()
-	} else {
-		log.Errorf("File %s does not exis\n", homebrew.Config.General.DMRIDs)
-	}
+	go reloadDmrIDInfo()
 
 	for {
 		if err := hb.ListenAndServe(); err != nil {
