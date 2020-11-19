@@ -270,7 +270,7 @@ func (h *Homebrew) SendQueue(q []*dmr.Packet, toPeer *Peer) error {
 func (h *Homebrew) SendTG(p *dmr.Packet, peer *Peer) error {
 	data := buildData(p, h.ID)
 	for _, toPeer := range h.GetPeers() {
-		if toPeer.ID == peer.ID { // skip self
+		if peer != nil && toPeer.ID == peer.ID { // skip self
 			continue
 		}
 
