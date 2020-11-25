@@ -9,11 +9,11 @@ DMR сервер для локальных нужд. Используется п
 ## Установка
 
 ```
-mkdir /opt/capybara
-cd /opt/capybara
 git clone https://github.com/polkabana/capybara
 go get github.com/polkabana/go-dmr github.com/op/go-logging gopkg.in/gcfg.v1
 go build capybara.go
+mkdir /opt/capybara
+sudo cp capybara capybara.cfg /opt/capybara
 ```
 
 
