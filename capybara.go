@@ -33,11 +33,14 @@ func reloadDmrIDInfo() {
 }
 
 func loadDmrIDInfo() {
-	newDmrIds := make([]*homebrew.DmrID, 0)
+	newDmrIds := make(map[uint32]*homebrew.DmrID, 0)
 	for _, fileName := range homebrew.Config.General.DMRIDs {
 		log.Debugf("load DMR IDs %s\n", fileName)
 		content, err := ioutil.ReadFile(fileName)
-		if err == nil {
+		if err != nil {
+			return
+		}
+
 			ids := strings.Split(string(content), "\n")
 			for _, line := range ids {
 				if len(line) > 0 && line[:1] == "#" { // skip commented line
@@ -47,9 +50,11 @@ func loadDmrIDInfo() {
 				record := strings.Split(line, "\t")
 
 				id, err := strconv.Atoi(strings.TrimSpace(record[0]))
-				if err == nil {
-					dmrid := &homebrew.DmrID{ID: uint32(id)}
+			if err != nil {
+				continue
+			}
 
+			dmrid := &homebrew.DmrID{}
 					if len(record) > 1 {
 						dmrid.Callsign = record[1]
 					}
@@ -57,9 +62,7 @@ func loadDmrIDInfo() {
 						dmrid.Alias = record[2]
 					}
 
-					newDmrIds = append(newDmrIds, dmrid)
-				}
-			}
+			newDmrIds[uint32(id)] = dmrid
 		}
 	}
 
@@ -120,7 +123,6 @@ func httpLastHeard(w http.ResponseWriter, r *http.Request) {
 
 	var calls []string
 	for _, call := range hb.GetCalls() {
-		callsign, alias := hb.GetDmrIDInfo(call.SrcID)
 		t := time.Unix(int64(call.Time/1000), 0)
 		timeString := t.Format("15:04:05 02-Jan-2006")
 
@@ -135,13 +137,18 @@ func httpLastHeard(w http.ResponseWriter, r *http.Request) {
 			Duration    uint32
 		}{
 			Src:         call.SrcID,
-			SrcCallsign: callsign,
-			SrcAlias:    alias,
+			SrcCallsign: "",
+			SrcAlias:    "",
 			Dst:         call.DstID,
 			TS:          call.Timeslot,
 			Type:        dmr.CallTypeShortName[call.CallType],
 			Time:        timeString,
 			Duration:    call.Duration,
+		}
+
+		if info := hb.GetDmrIDInfo(call.SrcID); info != nil {
+			data.SrcCallsign = info.Callsign
+			data.SrcAlias = info.Alias
 		}
 
 		b, err := json.Marshal(data)

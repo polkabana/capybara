@@ -83,7 +83,7 @@ type Homebrew struct {
 	Peer      map[string]*Peer
 	PeerID    map[uint32]*Peer
 	LastHeard []*CallRecord
-	DmrIDs    []*DmrID
+	DmrIDs    map[uint32]*DmrID
 
 	pf     dmr.PacketFunc
 	conn   *net.UDPConn
@@ -108,7 +108,6 @@ type CallRecord struct {
 }
 
 type DmrID struct {
-	ID       uint32
 	Callsign string
 	Alias    string
 }
@@ -126,7 +125,7 @@ func New(ID uint32, addr *net.UDPAddr) (*Homebrew, error) {
 		ID:     ID,
 		Peer:   make(map[string]*Peer),
 		PeerID: make(map[uint32]*Peer),
-		DmrIDs: make([]*DmrID, 0),
+		DmrIDs: make(map[uint32]*DmrID, 0),
 		id:     packRepeaterID(ID),
 		mutex:  &sync.Mutex{},
 		rxtx:   &sync.Mutex{},
@@ -904,13 +903,21 @@ func (h *Homebrew) parseRepeaterID(data []byte) (uint32, error) {
 }
 
 // GetDmrIDInfo - return callsign and alias by ID
-func (h *Homebrew) GetDmrIDInfo(id uint32) (string, string) {
-	for _, dmrid := range h.DmrIDs {
-		if dmrid.ID == id {
-			return dmrid.Callsign, dmrid.Alias
+func (h *Homebrew) GetDmrIDInfo(id uint32) *DmrID {
+	if dmrid, ok := h.DmrIDs[id]; ok {
+		return dmrid
 		}
+
+	return nil
+}
+
+// GetDmrIDCallsign - return callsign by ID or empty string
+func (h *Homebrew) GetDmrIDCallsign(id uint32) string {
+	if dmrid, ok := h.DmrIDs[id]; ok {
+		return dmrid.Callsign
 	}
-	return "", ""
+
+	return ""
 }
 
 // Interface compliance check
