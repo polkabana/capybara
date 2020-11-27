@@ -18,15 +18,8 @@ import (
 	"gopkg.in/gcfg.v1"
 )
 
-type dmrID struct {
-	ID       uint32
-	Callsign string
-	Alias    string
-}
-
 var (
 	hb      *homebrew.Homebrew
-	dmrIDs  []*dmrID
 	mutHTTP = &sync.Mutex{}
 	log     = logging.MustGetLogger("capybara")
 )
@@ -40,7 +33,7 @@ func reloadDmrIDInfo() {
 }
 
 func loadDmrIDInfo() {
-	var newDmrIds []*dmrID
+	newDmrIds := make([]*homebrew.DmrID, 0)
 	for _, fileName := range homebrew.Config.General.DMRIDs {
 		log.Debugf("load DMR IDs %s\n", fileName)
 		content, err := ioutil.ReadFile(fileName)
@@ -55,7 +48,7 @@ func loadDmrIDInfo() {
 
 				id, err := strconv.Atoi(strings.TrimSpace(record[0]))
 				if err == nil {
-					dmrid := &dmrID{ID: uint32(id)}
+					dmrid := &homebrew.DmrID{ID: uint32(id)}
 
 					if len(record) > 1 {
 						dmrid.Callsign = record[1]
@@ -70,17 +63,8 @@ func loadDmrIDInfo() {
 		}
 	}
 
-	dmrIDs = newDmrIds
+	hb.DmrIDs = newDmrIds
 	log.Debug("DMR IDs loaded")
-}
-
-func getDmrIDInfo(id uint32) (string, string) {
-	for _, dmrid := range dmrIDs {
-		if dmrid.ID == id {
-			return dmrid.Callsign, dmrid.Alias
-		}
-	}
-	return "", ""
 }
 
 func httpIndex(w http.ResponseWriter, r *http.Request) {
@@ -136,9 +120,7 @@ func httpLastHeard(w http.ResponseWriter, r *http.Request) {
 
 	var calls []string
 	for _, call := range hb.GetCalls() {
-
-		callsign, alias := getDmrIDInfo(call.SrcID)
-
+		callsign, alias := hb.GetDmrIDInfo(call.SrcID)
 		t := time.Unix(int64(call.Time/1000), 0)
 		timeString := t.Format("15:04:05 02-Jan-2006")
 
