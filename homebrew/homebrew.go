@@ -215,20 +215,32 @@ func (h *Homebrew) Unlink(id uint32) error {
 }
 
 func (h *Homebrew) ListenAndServe() error {
-	var data = make([]byte, 302)
-
+	//var data = make([]byte, 302)
 	h.stop = make(chan bool)
 	go h.keepalive(h.stop)
 
 	h.closed = false
 	for !h.closed {
-		n, peer, err := h.conn.ReadFromUDP(data)
+		var data = make([]byte, 302)
+
+		n, remote, err := h.conn.ReadFromUDP(data)
 		if err != nil {
 			log.Errorf("%s", err.Error())
 			return err
 		}
 
-		if err := h.handle(peer, data[:n]); err != nil {
+		//log.Debugf("data dump\n%s", hex.Dump(data[:n]))
+
+		peer := h.getPeerByAddr(remote)
+		//log.Debugf("peer %v\n", peer)
+
+		if peer == nil || peer.Incoming {
+			err = h.handleIncoming(remote, peer, data[:n])
+		} else {
+			err = h.handleOutgoing(remote, peer, data[:n])
+		}
+
+		if err != nil {
 			log.Errorf("%s", err.Error())
 
 			if h.closed && strings.HasSuffix(err.Error(), "use of closed network connection") {
@@ -385,8 +397,7 @@ func (h *Homebrew) SetCallDuration(streamID uint32) {
 
 }
 
-func (h *Homebrew) handle(remote *net.UDPAddr, data []byte) error {
-	peer := h.getPeerByAddr(remote)
+func (h *Homebrew) handleIncoming(remote *net.UDPAddr, peer *Peer, data []byte) error {
 	if peer == nil {
 		if bytes.Equal(data[:4], RepeaterLogin) {
 			repeaterID := unpackRepeaterID(data[4:])
@@ -425,240 +436,257 @@ func (h *Homebrew) handle(remote *net.UDPAddr, data []byte) error {
 			return nil
 		}
 
-		if peer.Incoming {
-			switch peer.Status {
-			case AuthNone:
-				switch {
-				case bytes.Equal(data[:4], RepeaterLogin):
-					if !peer.CheckRepeaterID(data[4:8]) {
-						log.Warningf("peer %d@%s sent invalid repeater ID %q (ignored)\n", peer.ID, remote, hex.EncodeToString(data[4:8]))
-						return h.WriteToPeer(append(MasterNAK, h.id...), peer)
-					}
-					// Peer is verified, generate a nonce
-					nonce := make([]byte, 4)
-					if _, err := rand.Read(nonce); err != nil {
-						log.Errorf("peer %d@%s nonce generation failed: %v\n", peer.ID, remote, err)
-						return h.WriteToPeer(append(MasterNAK, h.id...), peer)
-					}
-
-					peer.UpdateToken(nonce)
-					peer.Status = AuthBegin
-					return h.WriteToPeer(append(RepeaterACK, nonce...), peer)
-
-				default:
-					// Ignore unauthenticated repeater, we're not going to reply unless it's
-					// an actual login request; if it was indeed a valid repeater and we missed
-					// anything, we rely on the remote end to retry to reconnect if it doesn't
-					// get an answer in a timely manner.
-					break
-				}
-				break
-
-			case AuthBegin:
-				switch {
-				case bytes.Equal(data[:4], RepeaterKey):
-					//repeaterID := uint32(data[4])<<24 | uint32(data[5])<<16 | uint32(data[6])<<8 | uint32(data[7])
-
-					if !peer.CheckRepeaterID(data[4:8]) {
-						log.Warningf("peer %d@%s sent invalid repeater ID %q (ignored)\n", peer.ID, remote, hex.EncodeToString(data[4:8]))
-						return h.WriteToPeer(append(MasterNAK, h.id...), peer)
-					}
-
-					if len(data) != 40 {
-						log.Errorf("peer %d@%s sent wrong data length %d\n", peer.ID, remote, len(data))
-						peer.Status = AuthNone
-						return h.WriteToPeer(append(MasterNAK, h.id...), peer)
-					}
-
-					if !bytes.Equal(data[8:], peer.Token) {
-						log.Errorf("peer %d@%s sent invalid key challenge token\n", peer.ID, remote)
-						peer.Status = AuthNone
-						return h.WriteToPeer(append(MasterNAK, h.id...), peer)
-					}
-
-					log.Debugf("peer %d@%s auth done\n", peer.ID, remote)
-					peer.Status = AuthDone
-					return h.WriteToPeer(append(RepeaterACK, h.id...), peer)
-				}
-			}
-		} else { // peer.Outgoing
-			switch peer.Status {
-			case AuthNone:
-				switch {
-				case bytes.Equal(data[:6], RepeaterACK):
-					log.Debugf("peer %d@%s recv nonce %s\n", peer.ID, remote, hex.EncodeToString(data[6:10]))
-					peer.Status = AuthBegin
-					peer.UpdateToken(data[6:10])
-					return h.handleAuth(peer)
-
-				case bytes.Equal(data[:6], MasterNAK):
-					log.Errorf("peer %d@%s refused login\n", peer.ID, remote)
-					peer.Status = AuthFailed
-					if peer.UnlinkOnAuthFailure {
-						h.Unlink(peer.ID)
-					}
-					break
-				default:
-					log.Warningf("AuthNone peer %d@%s recv unexpected login reply (ignored)\n%s", peer.ID, remote, hex.Dump(data[:4]))
-					break
-				}
-
-			case AuthBegin:
-				switch {
-				case bytes.Equal(data[:6], MasterACK):
-				case bytes.Equal(data[:6], RepeaterACK):
-					log.Infof("peer %d@%s accepted login\n", peer.ID, remote)
-					peer.Last.PingSent = time.Now()
-					peer.Last.PongReceived = time.Now()
-					if peer.Config == nil {
-						peer.Status = AuthDone
-						return nil
-					} else {
-						peer.Status = AuthConfig
-						return h.handleAuth(peer)
-					}
-
-				case bytes.Equal(data[:6], MasterNAK):
-					log.Errorf("peer %d@%s refused login\n", peer.ID, remote)
-					peer.Status = AuthFailed
-					if peer.UnlinkOnAuthFailure {
-						h.Unlink(peer.ID)
-					}
-					break
-
-				default:
-					log.Warningf("AuthBegin peer %d@%s sent unexpected login reply (ignored)\n%s", peer.ID, remote, hex.Dump(data[:4]))
-					break
-				}
-
-			case AuthConfig:
-				switch {
-				case bytes.Equal(data[:6], RepeaterACK):
-					log.Debugf("peer %d@%s accepted config\n%s", peer.ID, remote, hex.EncodeToString(data[6:10]))
-					peer.Last.PingSent = time.Now()
-					peer.Last.PongReceived = time.Now()
-
-					if peer.Options == nil {
-						peer.Status = AuthDone
-						return nil
-					} else {
-						peer.Status = AuthOptions
-
-						return h.handleAuth(peer)
-					}
-
-				case bytes.Equal(data[:6], MasterNAK):
-					log.Errorf("peer %d@%s refused config\n", peer.ID, remote)
-					peer.Status = AuthFailed
-					if peer.UnlinkOnAuthFailure {
-						h.Unlink(peer.ID)
-					}
-					break
-				default:
-					log.Warningf("AuthNone peer %d@%s sent unexpected config reply (ignored)\n%s", peer.ID, remote, hex.Dump(data[:4]))
-					break
-				}
-
-			case AuthOptions:
-				switch {
-				case bytes.Equal(data[:6], RepeaterACK):
-					log.Debugf("peer %d@%s accepted options\n%s", peer.ID, remote, hex.EncodeToString(data[6:10]))
-					peer.Status = AuthDone
-					peer.Last.PingSent = time.Now()
-					peer.Last.PongReceived = time.Now()
-					return nil
-
-				case bytes.Equal(data[:6], MasterNAK):
-					log.Errorf("peer %d@%s refused options\n", peer.ID, remote)
-					peer.Status = AuthFailed
-					if peer.UnlinkOnAuthFailure {
-						h.Unlink(peer.ID)
-					}
-					break
-				default:
-					log.Warningf("AuthNone peer %d@%s sent unexpected options reply (ignored)\n%s", peer.ID, remote, hex.Dump(data[:4]))
-					break
-				}
-			}
-		}
-	} else {
-		// Authentication is done
-		if peer.Incoming {
+		switch peer.Status {
+		case AuthNone:
 			switch {
-			case bytes.Equal(data[:4], DMRData):
-				p, err := parseData(data)
-				if err != nil {
-					return err
+			case bytes.Equal(data[:4], RepeaterLogin):
+				if !peer.CheckRepeaterID(data[4:8]) {
+					log.Warningf("peer %d@%s sent invalid repeater ID %q (ignored)\n", peer.ID, remote, hex.EncodeToString(data[4:8]))
+					return h.WriteToPeer(append(MasterNAK, h.id...), peer)
 				}
-				return h.handlePacket(p, peer)
-
-			case len(data) == 10 && bytes.Equal(data[:6], MasterACK):
-				peer.Last.PingReceived = time.Now()
-				break
-
-			case len(data) == 11 && bytes.Equal(data[:7], MasterPing):
-				//log.Debugf("peer %d@%s sent ping %s\n", peer.ID, remote, data[:7])
-				peer.Last.PingReceived = time.Now()
-				return h.WriteToPeer(append(RepeaterPong, data[7:]...), peer)
-
-			case len(data) == 11 && bytes.Equal(data[:7], RepeaterPing):
-				//log.Debugf("peer %d@%s sent ping %s\n", peer.ID, remote, data[:7])
-				peer.Last.PingReceived = time.Now()
-				return h.WriteToPeer(append(MasterPong, data[7:]...), peer)
-
-			case bytes.Equal(data[:4], RepeaterConfig):
-				log.Debugf("peer %d@%s sent config\n", peer.ID, remote)
-				peer.Last.PingReceived = time.Now()
-				if peer.Config == nil { // sometime peer send config again
-					peer.Config, _ = parseConfigData(data)
-					//printConfig(peer.Config)
+				// Peer is verified, generate a nonce
+				nonce := make([]byte, 4)
+				if _, err := rand.Read(nonce); err != nil {
+					log.Errorf("peer %d@%s nonce generation failed: %v\n", peer.ID, remote, err)
+					return h.WriteToPeer(append(MasterNAK, h.id...), peer)
 				}
-				return h.WriteToPeer(append(RepeaterACK, peer.id...), peer)
 
-			case bytes.Equal(data[:4], RepeaterOptions):
-				log.Debugf("peer %d@%s sent options\n", peer.ID, remote)
-				peer.Last.PingReceived = time.Now()
-				peer.Options, _ = parseOptionsData(data)
-				//log.Debug(peer.Options)
-				return h.WriteToPeer(append(RepeaterACK, peer.id...), peer)
+				peer.UpdateToken(nonce)
+				peer.Status = AuthBegin
+				return h.WriteToPeer(append(RepeaterACK, nonce...), peer)
 
 			default:
-				log.Warningf("peer %d@%s sent unexpected packet (incoming, status=%s):\n", peer.ID, remote, peer.Status.String())
-				log.Debug(hex.Dump(data))
+				// Ignore unauthenticated repeater, we're not going to reply unless it's
+				// an actual login request; if it was indeed a valid repeater and we missed
+				// anything, we rely on the remote end to retry to reconnect if it doesn't
+				// get an answer in a timely manner.
 				break
 			}
-		} else { // peer.Outgoning
+			break
+
+		case AuthBegin:
 			switch {
-			case bytes.Equal(data[:4], DMRData):
-				p, err := parseData(data)
-				if err != nil {
-					return err
+			case bytes.Equal(data[:4], RepeaterKey):
+				//repeaterID := uint32(data[4])<<24 | uint32(data[5])<<16 | uint32(data[6])<<8 | uint32(data[7])
+
+				if !peer.CheckRepeaterID(data[4:8]) {
+					log.Warningf("peer %d@%s sent invalid repeater ID %q (ignored)\n", peer.ID, remote, hex.EncodeToString(data[4:8]))
+					return h.WriteToPeer(append(MasterNAK, h.id...), peer)
 				}
-				return h.handlePacket(p, peer)
 
-			case len(data) == 10 && bytes.Equal(data[:6], MasterACK):
-			case len(data) == 10 && bytes.Equal(data[:6], RepeaterACK):
-				log.Debugf("peer %d@%s received ACK %s\n", peer.ID, remote, data[:7])
-				peer.Last.PingSent = time.Now()
-				return h.WriteToPeer(append(MasterPing, peer.id...), peer)
+				if len(data) != 40 {
+					log.Errorf("peer %d@%s sent wrong data length %d\n", peer.ID, remote, len(data))
+					peer.Status = AuthNone
+					return h.WriteToPeer(append(MasterNAK, h.id...), peer)
+				}
 
-			case len(data) == 10 && bytes.Equal(data[:6], MasterNAK):
-				log.Errorf("peer %d@%s deauthenticated us; re-authenticating\n", peer.ID, remote)
-				peer.Status = AuthFailed
+				if !bytes.Equal(data[8:], peer.Token) {
+					log.Errorf("peer %d@%s sent invalid key challenge token\n", peer.ID, remote)
+					peer.Status = AuthNone
+					return h.WriteToPeer(append(MasterNAK, h.id...), peer)
+				}
+
+				log.Debugf("peer %d@%s auth done\n", peer.ID, remote)
+				peer.Status = AuthDone
+				return h.WriteToPeer(append(RepeaterACK, h.id...), peer)
+			}
+		}
+	} else { // Authentication is done
+		switch {
+		case bytes.Equal(data[:4], DMRData):
+			p, err := parseData(data)
+			if err != nil {
+				return err
+			}
+			return h.handlePacket(p, peer)
+
+		case len(data) == 10 && bytes.Equal(data[:6], MasterACK):
+			peer.Last.PingReceived = time.Now()
+			break
+
+		case len(data) == 11 && bytes.Equal(data[:7], MasterPing):
+			//log.Debugf("peer %d@%s sent ping %s\n", peer.ID, remote, data[:7])
+			peer.Last.PingReceived = time.Now()
+			return h.WriteToPeer(append(RepeaterPong, data[7:]...), peer)
+
+		case len(data) == 11 && bytes.Equal(data[:7], RepeaterPing):
+			//log.Debugf("peer %d@%s sent ping %s\n", peer.ID, remote, data[:7])
+			peer.Last.PingReceived = time.Now()
+			return h.WriteToPeer(append(MasterPong, data[7:]...), peer)
+
+		case bytes.Equal(data[:4], RepeaterConfig):
+			log.Debugf("peer %d@%s sent config\n", peer.ID, remote)
+			peer.Last.PingReceived = time.Now()
+			if peer.Config == nil { // sometime peer send config again
+				peer.Config, _ = parseConfigData(data)
+				//printConfig(peer.Config)
+			}
+			return h.WriteToPeer(append(RepeaterACK, peer.id...), peer)
+
+		case bytes.Equal(data[:4], RepeaterOptions):
+			log.Debugf("peer %d@%s sent options\n", peer.ID, remote)
+			peer.Last.PingReceived = time.Now()
+			peer.Options, _ = parseOptionsData(data)
+			//log.Debug(peer.Options)
+			return h.WriteToPeer(append(RepeaterACK, peer.id...), peer)
+
+		default:
+			log.Warningf("peer %d@%s sent unexpected packet (incoming, status=%s):\n", peer.ID, remote, peer.Status.String())
+			log.Debug(hex.Dump(data))
+			break
+		}
+	}
+
+	return nil
+}
+
+func (h *Homebrew) handleOutgoing(remote *net.UDPAddr, peer *Peer, data []byte) error {
+	//log.Debugf("handleOutgoing peer %s, data\n%s", remote, hex.Dump(data))
+
+	// Ignore packet that are clearly invalid, this is the minimum packet length for any Homebrew protocol frame
+	if len(data) < 8 {
+		log.Debugf("to short packet %d\n", len(data))
+		return nil
+	}
+
+	peer.Last.PacketReceived = time.Now()
+
+	if peer.Status != AuthDone {
+		// Ignore DMR data at this stage
+		if bytes.Equal(data[:4], DMRData) {
+			return nil
+		}
+
+		switch peer.Status {
+		case AuthNone:
+			switch {
+			case bytes.Equal(data[:6], RepeaterACK):
+				log.Debugf("peer %d@%s recv nonce %s\n", peer.ID, remote, hex.EncodeToString(data[6:10]))
+				peer.Status = AuthBegin
+				peer.UpdateToken(data[6:10])
 				return h.handleAuth(peer)
 
-			case len(data) == 11 && bytes.Equal(data[:7], MasterPong):
-			case len(data) == 11 && bytes.Equal(data[:7], RepeaterPong):
-				log.Debugf("peer %d@%s received pong %s\n", peer.ID, remote, data[:7])
+			case bytes.Equal(data[:6], MasterNAK):
+				log.Errorf("peer %d@%s refused login\n", peer.ID, remote)
+				peer.Status = AuthFailed
+				if peer.UnlinkOnAuthFailure {
+					h.Unlink(peer.ID)
+				}
+				break
+			default:
+				log.Warningf("AuthNone peer %d@%s recv unexpected login reply (ignored)\n%s", peer.ID, remote, hex.Dump(data[:4]))
+				break
+			}
+
+		case AuthBegin:
+			switch {
+			case bytes.Equal(data[:6], MasterACK):
+			case bytes.Equal(data[:6], RepeaterACK):
+				log.Infof("peer %d@%s accepted login\n", peer.ID, remote)
+				peer.Last.PingSent = time.Now()
 				peer.Last.PongReceived = time.Now()
+				if peer.Config == nil {
+					peer.Status = AuthDone
+					return nil
+				} else {
+					peer.Status = AuthConfig
+					return h.handleAuth(peer)
+				}
+
+			case bytes.Equal(data[:6], MasterNAK):
+				log.Errorf("peer %d@%s refused login\n", peer.ID, remote)
+				peer.Status = AuthFailed
+				if peer.UnlinkOnAuthFailure {
+					h.Unlink(peer.ID)
+				}
 				break
 
 			default:
-				log.Warningf("peer %d@%s sent unexpected packet (outgoing, status=%s):\n", peer.ID, remote, peer.Status.String())
-				log.Debug(hex.Dump(data))
+				log.Warningf("AuthBegin peer %d@%s sent unexpected login reply (ignored)\n%s", peer.ID, remote, hex.Dump(data[:4]))
+				break
+			}
+
+		case AuthConfig:
+			switch {
+			case bytes.Equal(data[:6], RepeaterACK):
+				log.Debugf("peer %d@%s accepted config\n%s", peer.ID, remote, hex.EncodeToString(data[6:10]))
+				peer.Last.PingSent = time.Now()
+				peer.Last.PongReceived = time.Now()
+
+				if peer.Options == nil {
+					peer.Status = AuthDone
+					return nil
+				} else {
+					peer.Status = AuthOptions
+
+					return h.handleAuth(peer)
+				}
+
+			case bytes.Equal(data[:6], MasterNAK):
+				log.Errorf("peer %d@%s refused config\n", peer.ID, remote)
+				peer.Status = AuthFailed
+				if peer.UnlinkOnAuthFailure {
+					h.Unlink(peer.ID)
+				}
+				break
+			default:
+				log.Warningf("AuthNone peer %d@%s sent unexpected config reply (ignored)\n%s", peer.ID, remote, hex.Dump(data[:4]))
+				break
+			}
+
+		case AuthOptions:
+			switch {
+			case bytes.Equal(data[:6], RepeaterACK):
+				log.Debugf("peer %d@%s accepted options\n%s", peer.ID, remote, hex.EncodeToString(data[6:10]))
+				peer.Status = AuthDone
+				peer.Last.PingSent = time.Now()
+				peer.Last.PongReceived = time.Now()
+				return nil
+
+			case bytes.Equal(data[:6], MasterNAK):
+				log.Errorf("peer %d@%s refused options\n", peer.ID, remote)
+				peer.Status = AuthFailed
+				if peer.UnlinkOnAuthFailure {
+					h.Unlink(peer.ID)
+				}
+				break
+			default:
+				log.Warningf("AuthNone peer %d@%s sent unexpected options reply (ignored)\n%s", peer.ID, remote, hex.Dump(data[:4]))
 				break
 			}
 		}
+	} else { // Authentication is done
+		switch {
+		case bytes.Equal(data[:4], DMRData):
+			p, err := parseData(data)
+			if err != nil {
+				return err
+			}
+			return h.handlePacket(p, peer)
+
+		case len(data) == 10 && bytes.Equal(data[:6], MasterACK):
+		case len(data) == 10 && bytes.Equal(data[:6], RepeaterACK):
+			log.Debugf("peer %d@%s received ACK %s\n", peer.ID, remote, data[:7])
+			peer.Last.PingSent = time.Now()
+			return h.WriteToPeer(append(MasterPing, peer.id...), peer)
+
+		case len(data) == 10 && bytes.Equal(data[:6], MasterNAK):
+			log.Errorf("peer %d@%s deauthenticated us; re-authenticating\n", peer.ID, remote)
+			peer.Status = AuthFailed
+			return h.handleAuth(peer)
+
+		case len(data) == 11 && bytes.Equal(data[:7], MasterPong):
+		case len(data) == 11 && bytes.Equal(data[:7], RepeaterPong):
+			log.Debugf("peer %d@%s received pong %s\n", peer.ID, remote, data[:7])
+			peer.Last.PongReceived = time.Now()
+			break
+
+		default:
+			log.Warningf("peer %d@%s sent unexpected packet (outgoing, status=%s):\n", peer.ID, remote, peer.Status.String())
+			log.Debug(hex.Dump(data))
+			break
+		}
+
 	}
 
 	return nil
